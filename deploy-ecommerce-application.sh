@@ -70,7 +70,7 @@ print_service_status firewalld
 
 # Configure database
 
-if ! is_service_active mariadb-server
+if ! is_service_active mariadb
 then
     print_color "green" "Installing MariaDB.. "
     sudo yum install mariadb-server -y
@@ -89,36 +89,43 @@ then
     sudo firewall-cmd --reload
 fi
 
-# Configure database
-cat > mariadb-setup.sql <<-EOF
-CREATE DATABASE ecomdb;
-CREATE USER "ecomuser"@"localhost" IDENTIFIED BY "ecompassword";
-GRANT ALL PRIVILEGES ON ecomdb.* TO "ecomuser"@"localhost";
-FLUSH PRIVILEGES;
-EOF
-
-print_color "green" "Setting up the database..."
-sudo mysql < mariadb-setup.sql
-
-# Create the load script
-cat > db-load-script.sql <<-EOF
-USE ecomdb;
-CREATE TABLE products (id mediumint(8) unsigned NOT NULL auto_increment,Name varchar(255) default NULL,Price varchar(255) default NULL, ImageUrl varchar(255) default NULL,PRIMARY KEY (id)) AUTO_INCREMENT=1;
-
-INSERT INTO products (Name,Price,ImageUrl) VALUES ("Laptop","100","c-1.png"),("Drone","200","c-2.png"),("VR","300","c-3.png"),("Tablet","50","c-5.png"),("Watch","90","c-6.png"),("Phone Covers","20","c-7.png"),("Phone","80","c-8.png"),("Laptop","150","c-4.png");
-EOF
-
-print_color "green" "Loading product table and its inventory..."
-sudo mysql < db-load-script.sql
-
-mysql_db_result=$(sudo mysql -e "USE ecomdb; SELET * FROM products;")
-
-if [ -n mysql_db_result ]
+ecomdb_database=$(sudo mysql -e "SHOW DATABASES;" | grep ecomdb)
+if [ -z $ecomdb_database ]  # -z check if is empty
 then 
-    print_color "green" "Table created with success!"
-else
-    print_color "reed" "Error on the creation of the products table"
+    # Configure database
+    cat > mariadb-setup.sql <<-EOF
+    CREATE DATABASE ecomdb;
+    CREATE USER "ecomuser"@"localhost" IDENTIFIED BY "ecompassword";
+    GRANT ALL PRIVILEGES ON ecomdb.* TO "ecomuser"@"localhost";
+    FLUSH PRIVILEGES;
+EOF
+
+    print_color "green" "Setting up the database..."
+    sudo mysql < mariadb-setup.sql
 fi
+
+products_table=$(sudo mysql -e "USE ecomdb; SHOW TABLES;" | grep products)
+if [ -z $products_table ] 
+then
+    cat > db-load-script.sql <<-EOF
+    USE ecomdb;
+    CREATE TABLE products (id mediumint(8) unsigned NOT NULL auto_increment,Name varchar(255) default NULL,Price varchar(255) default NULL, ImageUrl varchar(255) default NULL,PRIMARY KEY (id)) AUTO_INCREMENT=1;
+
+    INSERT INTO products (Name,Price,ImageUrl) VALUES ("Laptop","100","c-1.png"),("Drone","200","c-2.png"),("VR","300","c-3.png"),("Tablet","50","c-5.png"),("Watch","90","c-6.png"),("Phone Covers","20","c-7.png"),("Phone","80","c-8.png"),("Laptop","150","c-4.png");
+EOF
+    print_color "green" "Loading product table and its inventory..."
+    sudo mysql < db-load-script.sql
+
+    products_result=$(sudo mysql -e "USE ecomdb; SELECT * FROM products;")
+    if [[ -n $products_result && $? ]]
+    then 
+        print_color "green" "Table created with success!"
+    else
+        print_color "reed" "Error on the creation of the products table"
+    fi
+fi
+
+
 
 if  ! is_service_active httpd
 then
